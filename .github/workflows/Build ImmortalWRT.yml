@@ -1,0 +1,58 @@
+name: Build ImmortalWRT
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.config'
+
+env:
+  IMAGEBUILDER_URL: https://downloads.immortalwrt.org/releases/24.10.0/targets/x86/64/immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64.tar.zst
+  TARGET: x86/64
+  ROOTFS_SIZE: 1024  # 单位为MB (1024MB = 1GB)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y zstd build-essential libncurses5-dev git
+
+    - name: Download ImageBuilder
+      run: |
+        curl -LO ${{ env.IMAGEBUILDER_URL }}
+
+    - name: Extract ImageBuilder
+      run: |
+        zstd -d immortalwrt-imagebuilder-*.tar.zst -o imagebuilder.tar
+        tar xvf imagebuilder.tar --strip-components=1
+        rm imagebuilder.tar
+
+    - name: Prepare configuration
+      run: |
+        mkdir -p ./target/linux/${{ env.TARGET }}/
+        cp .config ./target/linux/${{ env.TARGET }}/config
+
+    - name: Build firmware
+      run: |
+        make image \
+          PROFILE="generic" \
+          PACKAGES="$(PKG_OPTIONS:-)" \
+          FILES="./files" \
+          EXTRA_IMAGE_NAME="custom" \
+          CONFIG_TARGET_ROOTFS_PARTSIZE=${{ env.ROOTFS_SIZE }}
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: immortalwrt-binaries
+        path: bin/targets/${{ env.TARGET }}/*
+        retention-days: 5
