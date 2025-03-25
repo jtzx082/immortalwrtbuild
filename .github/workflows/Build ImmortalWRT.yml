@@ -34,7 +34,7 @@ jobs:
     - name: Prepare configuration
       run: |
         # 将仓库中的.config文件复制到镜像构建器目录
-        cp path/to/your/config/.config immortalwrt-imagebuilder-*/  # 修改为你的实际配置文件路径
+        cp config/.config immortalwrt-imagebuilder-*/  # 修改为你的实际配置文件路径
 
     - name: Build firmware
       working-directory: ./immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64  # 根据实际目录名调整
