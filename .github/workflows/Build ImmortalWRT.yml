@@ -1,12 +1,12 @@
 name: Build ImmortalWRT
 
 on:
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60  # 根据构建需要调整超时时间
+    timeout-minutes: 90  # 延长超时时间
 
     steps:
     - name: Checkout repository
@@ -23,31 +23,38 @@ jobs:
           zstd \
           python3 \
           file \
-          wget
+          wget \
+          qemu-utils  # 添加qemu-img支持
 
     - name: Download Image Builder
       run: wget https://downloads.immortalwrt.org/releases/24.10.0/targets/x86/64/immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64.tar.zst
 
     - name: Extract Image Builder
-      run: tar -I zstd -xf immortalwrt-imagebuilder-*.tar.zst
+      run: |
+        mkdir -p imagebuilder
+        tar -I zstd -xf immortalwrt-imagebuilder-*.tar.zst -C imagebuilder --strip-components=1
 
     - name: Prepare configuration
       run: |
-        # 将仓库中的.config文件复制到镜像构建器目录
-        cp config/.config immortalwrt-imagebuilder-*/  # 修改为你的实际配置文件路径
+        mkdir -p imagebuilder/files/etc/uci-defaults
+        cp path/to/your/config/.config imagebuilder/  # 确保配置文件路径正确
+        # 创建空packages.txt防止报错
+        touch imagebuilder/packages.txt
 
     - name: Build firmware
-      working-directory: ./immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64  # 根据实际目录名调整
+      working-directory: ./imagebuilder
       run: |
         make -j$(nproc) image \
           PROFILE="generic" \
           FILES="$PWD/files" \
-          PACKAGES="$(cat packages.txt)"  # 如果有自定义包列表
+          PACKAGES="$(cat packages.txt)" \
+          BIN_DIR="$PWD/bin" \
+          IGNORE_ERRORS=1  # 忽略非致命错误
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: immortalwrt-firmware
         path: |
-          ./immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64/bin/targets/x86/64/*.img.gz
-          ./immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64/bin/targets/x86/64/sha256sums
+          ./imagebuilder/bin/targets/x86/64/*.img.gz
+          ./imagebuilder/bin/targets/x86/64/sha256sums
