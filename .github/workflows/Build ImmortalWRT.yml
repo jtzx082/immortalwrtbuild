@@ -1,15 +1,10 @@
-name: Build ImmortalWRT
+name: Build ImmortalWRT Firmware
 
 on:
-  workflow_dispatch:
   push:
-    paths:
-      - '.config'
-
-env:
-  IMAGEBUILDER_URL: https://downloads.immortalwrt.org/releases/24.10.0/targets/x86/64/immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64.tar.zst
-  TARGET: x86/64
-  ROOTFS_SIZE: 1024  # 单位为MB (1024MB = 1GB)
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   build:
@@ -17,43 +12,36 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v2
 
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y zstd build-essential libncurses5-dev git qemu-utils  # 新增qemu-utils
+        sudo apt-get install -y zstd
 
-    - name: Download ImageBuilder
+    - name: Download ImmortalWRT Image Builder
       run: |
-        curl -LO ${{ env.IMAGEBUILDER_URL }}
+        wget https://downloads.immortalwrt.org/releases/24.10.0/targets/x86/64/immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64.tar.zst
+        tar --use-compress-program=unzstd -xf immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64.tar.zst
+        mv immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64 imagebuilder
 
-    - name: Extract ImageBuilder
+    - name: Copy .config file
       run: |
-        zstd -d immortalwrt-imagebuilder-*.tar.zst -o imagebuilder.tar
-        tar xvf imagebuilder.tar --strip-components=1
-        rm imagebuilder.tar
-
-    - name: Prepare configuration
-      run: |
-        mkdir -p ./target/linux/${{ env.TARGET }}/
-        cp .config ./target/linux/${{ env.TARGET }}/config
+        cp .config imagebuilder/.config
 
     - name: Build firmware
       run: |
-        # 增加BIOS分区大小设置
-        sed -i 's/CONFIG_TARGET_KERNEL_PARTSIZE=.*/CONFIG_TARGET_KERNEL_PARTSIZE=2/' .config
-        make image \
-          PROFILE="generic" \
-          PACKAGES="base-files luci" \  # 明确指定基础包
-          FILES="./files" \
-          EXTRA_IMAGE_NAME="custom" \
-          CONFIG_TARGET_ROOTFS_PARTSIZE=${{ env.ROOTFS_SIZE }} \
-          V=s  # 显示详细日志
+        cd imagebuilder
+        make image PROFILE=x86-64 PACKAGES="kmod-usb-net kmod-usb-net-cdc-ether kmod-usb-net-rndis" FILES="files/"
+        dd if=/dev/zero of=firmware.img bs=1M count=1024
+        mkfs.ext4 -F -L "ImmortalWRT" firmware.img
+        mkdir -p /mnt/firmware
+        sudo mount -o loop firmware.img /mnt/firmware
+        sudo cp -r bin/targets/x86/64/* /mnt/firmware/
+        sudo umount /mnt/firmware
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+    - name: Upload firmware
+      uses: actions/upload-artifact@v2
       with:
-        name: immortalwrt-binaries
-        path: bin/targets/${{ env.TARGET }}/*
-        retention-days: 5
+        name: immortalwrt-firmware
+        path: imagebuilder/bin/targets/x86/64/
