@@ -41,7 +41,7 @@ jobs:
         sudo umount /mnt/firmware
 
     - name: Upload firmware
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v3.1.0
       with:
         name: immortalwrt-firmware
         path: imagebuilder/bin/targets/x86/64/
