@@ -1,25 +1,6 @@
-name: Build ImmortalWrt x86_64
-
-on:
-  workflow_dispatch:
-  push:
-    paths:
-      - '.config'
-      - 'feeds.conf*'
-
-env:
-  CCACHE_DIR: ${{ github.workspace }}/ccache
-  DL_DIR: ${{ github.workspace }}/dl
-  TARGET: x86_64
-  BUILD_JOBS: 4
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -27,17 +8,24 @@ jobs:
         submodules: recursive
         fetch-depth: 0
 
-    - name: Setup Swap File (8GB)
+    # 新增关键步骤：源码初始化
+    - name: Prepare source tree
       run: |
-        sudo fallocate -l 8G /swapfile
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
+        # 如果使用子模块
+        git submodule update --init --recursive
+        
+        # 或手动克隆（根据实际情况选择一种）
+        # git clone https://github.com/immortalwrt/immortalwrt.git --depth=1
+        
+        # 确保目录存在
+        mkdir -p immortalwrt
 
+    # 修正后的配置复制步骤
     - name: Copy Configuration Files
       run: |
+        test -d immortalwrt || { echo "immortalwrt directory missing!"; exit 1; }
         cp -fv .config immortalwrt/
-        cp -fv feeds.conf.default immortalwrt/
+        cp -fv feeds.conf* immortalwrt/
 
     - name: Install Dependencies
       run: |
