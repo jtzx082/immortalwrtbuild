@@ -1,60 +1,46 @@
-name: Build ImmortalWRT
+name: Build ImmortalWRT Firmware
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90  # 延长超时时间
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      uses: actions/checkout@v3
 
-    - name: Install dependencies
+    - name: Set up build environment
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          libssl-dev \
-          zstd \
-          python3 \
-          file \
-          wget \
-          qemu-utils  # 添加qemu-img支持
+        sudo apt-get install -y build-essential zstd
 
-    - name: Download Image Builder
-      run: wget https://downloads.immortalwrt.org/releases/24.10.0/targets/x86/64/immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64.tar.zst
-
-    - name: Extract Image Builder
+    - name: Download ImmortalWRT ImageBuilder
       run: |
-        mkdir -p imagebuilder
-        tar -I zstd -xf immortalwrt-imagebuilder-*.tar.zst -C imagebuilder --strip-components=1
+        wget https://downloads.immortalwrt.org/releases/24.10.0/targets/x86/64/immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64.tar.zst
+        tar --use-compress-program=unzstd -xvf immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64.tar.zst
 
-    - name: Prepare configuration
+    - name: Copy configuration files
       run: |
-        mkdir -p imagebuilder/files/etc/uci-defaults
-        cp config/.config imagebuilder/  # 确保配置文件路径正确
-        # 创建空packages.txt防止报错
-        touch imagebuilder/packages.txt
+        cp .config immortalwrt-imagebuilder-24.10.0-x86-64/.config
+        cp feeds immortalwrt-imagebuilder-24.10.0-x86-64/feeds.conf.default
+
+    #- name: Install custom packages
+    #  run: |
+    #    cd immortalwrt-imagebuilder-24.10.0-x86-64
+    #    make package/feeds/packages/<your-custom-package>/install V=s
 
     - name: Build firmware
-      working-directory: ./imagebuilder
       run: |
-        make -j$(nproc) image \
-          PROFILE="generic" \
-          FILES="$PWD/files" \
-          PACKAGES="$(cat packages.txt)" \
-          BIN_DIR="$PWD/bin" \
-          IGNORE_ERRORS=1  # 忽略非致命错误
+        cd immortalwrt-imagebuilder-24.10.0-x86-64
+        make image V=s
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+    - name: Upload firmware
+      uses: actions/upload-artifact@v3
       with:
-        name: immortalwrt-firmware
-        path: |
-          ./imagebuilder/bin/targets/x86/64/*.img.gz
-          ./imagebuilder/bin/targets/x86/64/sha256sums
+        name: ImmortalWRT-Firmware
+        path: immortalwrt-imagebuilder-24.10.0-x86-64/bin/targets/x86/64/
