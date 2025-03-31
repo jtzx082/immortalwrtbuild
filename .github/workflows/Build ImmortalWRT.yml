@@ -30,9 +30,9 @@ jobs:
         cp feeds immortalwrt-imagebuilder-24.10.0-x86-64/feeds.conf.default
 
     #- name: Install custom packages
-     # run: |
-     #   cd immortalwrt-imagebuilder-24.10.0-x86-64
-     #   make package/feeds/packages/<your-custom-package>/install V=s
+    #  run: |
+    #    cd immortalwrt-imagebuilder-24.10.0-x86-64
+    #    make package/feeds/packages/<your-custom-package>/install V=s
 
     - name: Build firmware
       run: |
@@ -40,7 +40,7 @@ jobs:
         make image V=s
 
     - name: Upload firmware
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v2
       with:
         name: ImmortalWRT-Firmware
         path: immortalwrt-imagebuilder-24.10.0-x86-64/bin/targets/x86/64/
