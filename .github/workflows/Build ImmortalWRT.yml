@@ -1,48 +1,98 @@
+name: ImmortalWrt x86_64 Builder
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.config'
+      - 'feeds.conf*'
+
+env:
+  CCACHE_DIR: ${{ github.workspace }}/ccache
+  DL_DIR: ${{ github.workspace }}/dl
+  TARGET: x86_64
+  BUILD_JOBS: 4
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
+
     steps:
-    - name: Checkout repository
+    # ---------- 代码仓库初始化 ----------
+    - name: Checkout base repository
       uses: actions/checkout@v4
       with:
         submodules: recursive
-        fetch-depth: 0
+        fetch-depth: 1
 
-    # 新增关键步骤：源码初始化
-    - name: Prepare source tree
+    # ---------- 源码树准备 ----------
+    - name: Prepare ImmortalWrt source
+      id: prepare_source
       run: |
-        # 如果使用子模块
-        git submodule update --init --recursive
+        # 选择其中一种源码获取方式（推荐方案A）
         
-        # 或手动克隆（根据实际情况选择一种）
+        # 方案A：使用子模块
+        if [ -f .gitmodules ]; then
+          git submodule update --init --recursive --depth=1
+        else
+          echo "::warning::Missing .gitmodules, cloning manually..."
+          git clone https://github.com/immortalwrt/immortalwrt.git --depth=1
+        fi
+
+        # 方案B：强制覆盖式克隆（如果已有问题）
+        # rm -rf immortalwrt
         # git clone https://github.com/immortalwrt/immortalwrt.git --depth=1
-        
-        # 确保目录存在
-        mkdir -p immortalwrt
 
-    # 修正后的配置复制步骤
-    - name: Copy Configuration Files
+        # 验证目录结构
+        if [ ! -d "immortalwrt" ]; then
+          echo "::error::immortalwrt directory not found!"
+          exit 1
+        fi
+
+    # ---------- 系统资源准备 ----------
+    - name: Setup swap space (8GB)
       run: |
-        test -d immortalwrt || { echo "immortalwrt directory missing!"; exit 1; }
-        cp -fv .config immortalwrt/
-        cp -fv feeds.conf* immortalwrt/
+        sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
 
-    - name: Install Dependencies
+    # ---------- 依赖安装 ----------
+    - name: Install build dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          build-essential ccache ecj fastjar file flex g++ gawk \
-          gettext git java-propose-classpath libelf-dev libncurses-dev \
-          libncurses5-dev libssl-dev python3 python3-dev python3-pip \
-          python3-setuptools rsync unzip wget zlib1g-dev
+          build-essential ccache ecj fastjar file flex g++ gawk gettext \
+          git libelf-dev libncurses5-dev libssl-dev python3 python3-pip \
+          rsync unzip wget zlib1g-dev jq
 
-    - name: Setup CCACHE
+    # ---------- 配置注入 ----------
+    - name: Deploy configurations
       run: |
-        ccache -o compression=true
+        echo "当前工作目录: $(pwd)"
+        ls -al
+        
+        echo "正在注入配置文件..."
+        cp -v .config immortalwrt/.config || echo "::warning::.config 文件不存在"
+        cp -v feeds.conf* immortalwrt/ || echo "::warning::feeds.conf 文件不存在"
+        
+        # 配置文件存在性验证
+        if [ ! -f "immortalwrt/.config" ]; then
+          echo "::error::Missing .config in source directory!"
+          exit 1
+        fi
+
+    # ---------- 编译环境准备 ----------
+    - name: CCache configuration
+      run: |
+        sudo mkdir -p $CCACHE_DIR
+        sudo chmod -R 777 $CCACHE_DIR
         ccache -M 5G
         ccache -s
 
-    - name: Prepare Build System
+    # ---------- 核心编译流程 ----------
+    - name: Build system preparation
       working-directory: ./immortalwrt
       run: |
         ./scripts/feeds update -a
@@ -50,15 +100,17 @@ jobs:
         make defconfig
         make -j$BUILD_JOBS download
 
-    - name: Build Firmware
+    - name: Compile firmware
       working-directory: ./immortalwrt
       run: |
-        make -j$BUILD_JOBS V=s
+        make -j$BUILD_JOBS V=s || make -j1 V=s
 
-    - name: Upload Artifacts
+    # ---------- 产物处理 ----------
+    - name: Archive artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: immortalwrt-bin
+        name: immortalwrt-${{ github.run_id }}
         path: |
           ./immortalwrt/bin/targets/x86/64/*
-          ./immortalwrt/.config
+          !**/*.manifest
+          !**/*.sha256sum
