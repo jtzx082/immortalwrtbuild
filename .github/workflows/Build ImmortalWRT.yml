@@ -1,46 +1,70 @@
-name: Build ImmortalWRT Firmware
+name: Build ImmortalWrt x86_64
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      extra_packages:
+        description: 'Extra packages (space-separated)'
+        required: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      IMAGEBUILDER_URL: https://downloads.immortalwrt.org/releases/24.10.0/targets/x86/64/immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64.tar.zst
+      TARGET: x86/64
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Set up build environment
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential zstd
+        sudo apt-get install -y \
+          build-essential \
+          libncurses-dev \
+          zlib1g-dev \
+          gawk \
+          git \
+          gettext \
+          libssl-dev \
+          xsltproc \
+          wget \
+          unzip \
+          zstd
 
-    - name: Download ImmortalWRT ImageBuilder
+    - name: Download and extract imagebuilder
       run: |
-        wget https://downloads.immortalwrt.org/releases/24.10.0/targets/x86/64/immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64.tar.zst
-        tar --use-compress-program=unzstd -xvf immortalwrt-imagebuilder-24.10.0-x86-64.Linux-x86_64.tar.zst
+        wget $IMAGEBUILDER_URL -O imagebuilder.tar.zst
+        mkdir imagebuilder
+        tar -xaf imagebuilder.tar.zst -C imagebuilder --strip-components 1
 
     - name: Copy configuration files
       run: |
-        cp .config immortalwrt-imagebuilder-24.10.0-x86-64/.config
-        cp feeds immortalwrt-imagebuilder-24.10.0-x86-64/feeds.conf.default
+        cp -v .config imagebuilder/
+        cp -v feeds.conf.default imagebuilder/
 
-    #- name: Install custom packages
-    #  run: |
-    #    cd immortalwrt-imagebuilder-24.10.0-x86-64
-    #    make package/feeds/packages/<your-custom-package>/install V=s
-
-    - name: Build firmware
+    - name: Prepare build environment
+      working-directory: ./imagebuilder
       run: |
-        cd immortalwrt-imagebuilder-24.10.0-x86-64
-        make image V=s
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+        make defconfig
 
-    - name: Upload firmware
-      uses: actions/upload-artifact@v2
+    - name: Build image
+      working-directory: ./imagebuilder
+      run: |
+        EXTRA_PACKAGES="${{ github.event.inputs.extra_packages }}"
+        make image \
+          PROFILE="generic" \
+          PACKAGES="base-files $EXTRA_PACKAGES" \
+          FILES="files"
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
       with:
-        name: ImmortalWRT-Firmware
-        path: immortalwrt-imagebuilder-24.10.0-x86-64/bin/targets/x86/64/
+        name: immortalwrt-binaries
+        path: imagebuilder/bin/targets/$TARGET/*.gz
