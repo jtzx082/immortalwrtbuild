@@ -64,7 +64,7 @@ jobs:
           FILES="files"
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4  # 关键修正点
       with:
         name: immortalwrt-binaries
         path: imagebuilder/bin/targets/$TARGET/*.gz
